@@ -1,0 +1,129 @@
+{
+  "project_name": "Veda Brands",
+  "domain": "Creative Agency / Branding & Marketing + CMS",
+  "theme": "dark",
+  "archetype": "Archetype 5: Luxury mixed with Archetype 4 (High-Contrast Tech)",
+  "vibe": "Expensive, futuristic, powerful, minimal, confident, glassmorphism",
+  "design_philosophy": "E1 Protocol: Avoid generic AI layouts. Use extreme asymmetry, deep z-index layering, heavy glassmorphism with 'milled crystal' borders, and ambient light blobs underneath UI elements. 'Inter' is banned for headings to avoid the 'Vercel template' look. Focus on high-contrast text and dark matte backgrounds.",
+  "colors": {
+    "background": {
+      "primary": "#09090B",
+      "secondary": "#111827",
+      "matte_black": "#0A0A0A"
+    },
+    "accents": {
+      "primary": "#7C3AED",
+      "secondary": "#A855F7",
+      "highlight": "#22D3EE",
+      "glow_ambient": "rgba(124, 58, 237, 0.15)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "glass": {
+      "surface": "rgba(255, 255, 255, 0.03)",
+      "surface_hover": "rgba(255, 255, 255, 0.08)",
+      "border": "rgba(255, 255, 255, 0.12)",
+      "border_subtle": "rgba(255, 255, 255, 0.05)"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Outfit', 'Cabinet Grotesk', sans-serif",
+      "body": "'Manrope', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "hierarchy": {
+      "h1": "text-5xl md:text-7xl font-bold tracking-tighter leading-[1.1]",
+      "h2": "text-4xl md:text-5xl font-semibold tracking-tight",
+      "h3": "text-2xl md:text-3xl font-medium tracking-tight",
+      "body": "text-base md:text-lg font-normal leading-relaxed tracking-wide text-[#A1A1AA]",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-[#22D3EE]"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing Philosophy. Use large padding (p-12 to p-32) to create breathing room.",
+    "section_spacing": "py-24 md:py-32",
+    "bento_grid": {
+      "marketing": "grid grid-cols-1 md:grid-cols-12 gap-8",
+      "admin_dashboard": "grid grid-cols-1 md:grid-cols-4 gap-6"
+    }
+  },
+  "surfaces_and_glassmorphism": {
+    "premium_card": "bg-white/[0.03] backdrop-blur-[24px] border border-white/[0.12] rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:bg-white/[0.08] hover:-translate-y-1 hover:border-white/[0.2]",
+    "header_nav": "bg-black/40 backdrop-blur-xl border-b border-white/[0.12] z-50 sticky top-0",
+    "admin_surface": "bg-[#111827] border border-white/5 rounded-xl shadow-sm",
+    "floating_blobs": "absolute rounded-full blur-[120px] mix-blend-screen pointer-events-none opacity-40",
+    "glow_cyan": "bg-[#22D3EE]/20",
+    "glow_violet": "bg-[#7C3AED]/20"
+  },
+  "motion_and_interactions": {
+    "library": "framer-motion",
+    "page_transition": {
+      "initial": { "opacity": 0, "y": 20 },
+      "animate": { "opacity": 1, "y": 0 },
+      "transition": { "duration": 0.6, "ease": [0.22, 1, 0.36, 1] }
+    },
+    "hover_effects": "All cards must have slight negative Y translation and border brightness increase.",
+    "parallax": "Use scroll-linked subtle parallax for background floating glass layers."
+  },
+  "components": {
+    "buttons": {
+      "primary": "relative overflow-hidden bg-white text-black font-semibold px-8 py-4 rounded-full transition-all hover:scale-105 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)]",
+      "secondary": "border border-white/20 bg-transparent text-white font-medium px-8 py-4 rounded-full backdrop-blur-md transition-all hover:bg-white/10 hover:border-white/40",
+      "floating_connect": "fixed bottom-8 right-8 w-16 h-16 rounded-full bg-gradient-to-r from-[#7C3AED] to-[#22D3EE] text-white flex items-center justify-center shadow-[0_0_30px_rgba(124,58,237,0.5)] cursor-pointer hover:scale-110 transition-transform z-50 backdrop-blur-xl"
+    },
+    "hero_section": {
+      "structure": "Deep relative container. Back layer: dark mesh gradient and glowing blobs. Middle layer: floating glass cards (decorative). Front layer: Typography and CTAs.",
+      "title": "We Build Brands That People Remember.",
+      "ctas": ["Start Your Project", "View Portfolio"]
+    },
+    "admin_dashboard": {
+      "sidebar": "w-64 bg-[#09090B] border-r border-white/10 h-screen sticky top-0",
+      "content": "flex-1 bg-[#111827] p-8",
+      "cards": "bg-[#09090B] border border-white/5 rounded-xl p-6"
+    }
+  },
+  "media": {
+    "logo": {
+      "url": "https://customer-assets.emergentagent.com/job_plan-to-web-3/artifacts/qbcwotqv_file_000000004c4c71faacfe1a270ae532d7.png",
+      "description": "Veda Brands Logo (Gold/Cyan/Blue V-shaped skyline)"
+    },
+    "hero_backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e",
+        "category": "background",
+        "description": "Abstract purple and pink fluid gradient to use as under-layer for glassmorphism."
+      },
+      {
+        "url": "https://images.pexels.com/photos/13568041/pexels-photo-13568041.jpeg",
+        "category": "texture",
+        "description": "Dark metallic fluid texture for section dividers or cards."
+      }
+    ],
+    "office_and_team": [
+      {
+        "url": "https://images.pexels.com/photos/3118195/pexels-photo-3118195.png",
+        "category": "about",
+        "description": "Luxury modern office architecture for 'About Us' section."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1572021335469-31706a17aaef?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBjcmVhdGl2ZSUyMGFnZW5jeSUyMHRlYW18ZW58MHx8fHwxNzgyNTYxODg1fDA&ixlib=rb-4.1.0&q=85",
+        "category": "team",
+        "description": "Professional creative agency team working."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Build standard HTML/Tailwind components for the Marketing website to allow free-form asymmetrical layouts, overlapping layers, and deep glassmorphism.",
+    "Use standard Shadcn UI components for the Admin Dashboard and Lead Capture forms, modifying them to use the dark theme and violet/cyan accents.",
+    "Do NOT use standard 'Inter' font for headings. Setup 'Outfit' or 'Cabinet Grotesk' in Google Fonts.",
+    "Strictly follow the color tokens. Avoid raw #000000, use #09090B (Zinc 950) instead.",
+    "Include 'data-testid' on ALL interactive elements (buttons, links, form inputs) using kebab-case role-based names (e.g., 'data-testid=\"hero-cta-button\"').",
+    "Implement the floating connect button globally on the marketing side.",
+    "For the hero background, place floating blur divs behind the main content to create the 'Apple/Linear' glow effect.",
+    "Ensure high contrast. Normal text must be pure white (#FFFFFF) or light gray (#A1A1AA) against the dark backgrounds."
+  ]
+}
