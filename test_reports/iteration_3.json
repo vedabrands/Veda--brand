@@ -1,0 +1,33 @@
+{
+  "summary": "Both bug fixes VERIFIED. (1) Root-level /health endpoint returns 200 {\"status\":\"ok\"} on backend pod at localhost:8001/health — which is exactly what k8s liveness/readiness probes hit; this eliminates the 'GET /health 404 Not Found' log spam. Public ingress correctly continues to route /health to the frontend SPA (only /api/* goes to backend). (2) Auth cookies now use SameSite=Lax (NOT None) with Secure+HttpOnly. End-to-end same-session flow works: POST /api/auth/login -> GET /api/auth/me (200, returns admin user), GET /api/admin/overview (200, returns counts), POST /api/auth/logout (200) then GET /api/auth/me (401). The 'login 200 then me 401' production bug is resolved.",
+  "tested_scope": ["backend", "health-probe", "auth-cookies"],
+  "passed": [
+    "GET http://localhost:8001/health -> 200 {status:'ok'} application/json (k8s probe path)",
+    "GET /api/ -> 200 {name:'Veda Brands API', status:'ok'} (existing route not broken)",
+    "GET /api/setup/status -> 200 with admin_exists field",
+    "POST /api/auth/login -> 200 sets access_token + refresh_token cookies with SameSite=Lax; Secure; HttpOnly (verified via raw Set-Cookie headers; SameSite=None is no longer used for app cookies)",
+    "POST /api/auth/login -> GET /api/auth/me on same Session jar -> 200 (returns owner@vedabrands.com, role=admin). Core bug fix verified.",
+    "POST /api/auth/login -> GET /api/admin/overview on same Session -> 200 with counts dict",
+    "POST /api/auth/login -> POST /api/auth/logout -> GET /api/auth/me -> 401 (logout clears cookies correctly)"
+  ],
+  "failed": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_health_and_auth_cookies.py",
+    "/app/test_reports/pytest/iteration_3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Note for main agent: The public preview URL (https://plan-to-web-3.preview.emergentagent.com/health) routes /health to the FRONTEND SPA (Express) and returns 200 with HTML, not the backend. This is expected — k8s probes hit the backend pod directly on its container port (8001), not via the ingress. The backend /health fix at localhost:8001/health is the correct fix and works.",
+    "Cloudflare injects its own __cf_bm cookie with SameSite=None on responses through the preview ingress; this is unrelated to the app's auth cookies and not a bug. App-issued cookies (access_token/refresh_token) are correctly SameSite=Lax."
+  ],
+  "updated_files": ["/app/backend/tests/test_health_and_auth_cookies.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "owner@vedabrands.com / OwnerPass123! (admin already seeded; /api/setup/status -> admin_exists:true)",
+  "seed_data_creation": "None — used existing admin",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Two bugs from production logs were fixed and verified in iteration 3: (a) added root-level GET /health endpoint in /app/backend/server.py for k8s probes (NOT under /api router); (b) changed auth cookie SameSite from 'none' to 'lax' in set_auth_cookies(). Pytest file /app/backend/tests/test_health_and_auth_cookies.py covers both. Note: /health is reachable at localhost:8001/health (pod-internal). Through the public ingress, /health returns the frontend SPA HTML (not a bug — ingress only forwards /api/* to backend). App cookies (access_token, refresh_token) carry SameSite=Lax; the __cf_bm Cloudflare cookie may show SameSite=None but is injected by Cloudflare and unrelated.",
+  "rca_of_the_issue": "Login-200-then-me-401 was caused by SameSite=None on auth cookies. Modern browsers and same-origin contexts can drop/reject SameSite=None cookies if not strictly cross-origin, leading to the cookie not being sent on the very next request. Switching to SameSite=Lax (the secure default for same-site flows) makes the cookie persist for navigations and XHR on the same site. Verified by performing login -> me on a single requests.Session and getting 200 instead of 401."
+}

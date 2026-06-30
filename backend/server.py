@@ -61,8 +61,10 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def set_auth_cookies(response: Response, access: str, refresh: str):
-    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
+    # SameSite=Lax works for same-origin deployments (frontend + backend on same domain via k8s ingress).
+    # Secure=True is required on HTTPS production; harmless under HTTPS preview as well.
+    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="lax", max_age=43200, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="lax", max_age=604800, path="/")
 
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
@@ -506,6 +508,11 @@ async def admin_overview(_: dict = Depends(require_admin)):
     }
 
 # ---------------- App wiring ----------------
+@app.get("/health")
+async def health():
+    """Kubernetes liveness/readiness probe endpoint (root-level, NOT /api/health)."""
+    return {"status": "ok"}
+
 @api.get("/")
 async def root():
     return {"name": "Veda Brands API", "status": "ok"}
