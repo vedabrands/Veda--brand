@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import PasswordInput from "@/components/site/PasswordInput";
 
 export default function AdminLogin() {
     const nav = useNavigate();
@@ -46,7 +47,7 @@ export default function AdminLogin() {
                 ) : (
                     <form onSubmit={submit} className="space-y-3">
                         <input data-testid="admin-email" type="email" placeholder="Email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
-                        <input data-testid="admin-password" type="password" placeholder="Password" required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
+                        <PasswordInput testid="admin-password" placeholder="Password" required value={form.password} onChange={v => setForm({ ...form, password: v })} />
                         <button data-testid="admin-submit" disabled={busy} className="btn-primary w-full justify-center">{busy ? "Authenticating…" : "Login"}</button>
                         <div className="text-center pt-1">
                             <Link to="/admin/forgot" data-testid="admin-forgot-link" className="text-xs text-white/50 hover:text-veda-cyan">Forgot password?</Link>

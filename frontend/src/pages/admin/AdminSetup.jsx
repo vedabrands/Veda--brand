@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import PasswordInput from "@/components/site/PasswordInput";
 
 export default function AdminSetup() {
     const nav = useNavigate();
@@ -38,7 +39,7 @@ export default function AdminSetup() {
                 <form onSubmit={submit} className="space-y-3">
                     <input placeholder="Full name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10" data-testid="setup-name" />
                     <input type="email" placeholder="Email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10" data-testid="setup-email" />
-                    <input type="password" placeholder="Password (min 8 chars)" minLength={8} required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10" data-testid="setup-password" />
+                    <PasswordInput testid="setup-password" placeholder="Password (min 8 chars)" minLength={8} required value={form.password} onChange={v => setForm({ ...form, password: v })} />
                     <button disabled={busy} className="btn-primary w-full justify-center" data-testid="setup-submit">{busy ? "Creating…" : "Create admin"}</button>
                 </form>
             </div>

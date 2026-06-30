@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { formatApiError, api } from "@/lib/api";
 import { toast } from "sonner";
 import GradientBg from "@/components/site/GradientBg";
+import PasswordInput from "@/components/site/PasswordInput";
 
 export default function Login() {
     const { login } = useAuth();
@@ -42,7 +43,7 @@ export default function Login() {
                             <input data-testid="login-name" placeholder="Full name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
                         )}
                         <input data-testid="login-email" type="email" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
-                        <input data-testid="login-password" type="password" placeholder="Password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
+                        <PasswordInput testid="login-password" placeholder="Password" required value={form.password} onChange={v => setForm({ ...form, password: v })} />
                         <button data-testid="login-submit" disabled={busy} className="btn-primary w-full justify-center">{busy ? "Working…" : mode === "login" ? "Login" : "Create account"}</button>
                     </form>
                     <div className="mt-5 text-sm text-white/50 text-center">

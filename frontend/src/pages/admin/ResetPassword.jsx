@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import PasswordInput from "@/components/site/PasswordInput";
 
 export default function ResetPassword() {
     const [params] = useSearchParams();
@@ -39,8 +40,8 @@ export default function ResetPassword() {
                     <div className="glass rounded-2xl p-5 text-sm text-emerald-300">Password updated. Redirecting to login…</div>
                 ) : (
                     <form onSubmit={submit} className="space-y-3">
-                        <input data-testid="reset-password" type="password" required minLength={8} placeholder="New password" value={pw} onChange={e => setPw(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
-                        <input data-testid="reset-confirm" type="password" required minLength={8} placeholder="Confirm new password" value={pw2} onChange={e => setPw2(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
+                        <PasswordInput testid="reset-password" placeholder="New password" required minLength={8} value={pw} onChange={setPw} />
+                        <PasswordInput testid="reset-confirm" placeholder="Confirm new password" required minLength={8} value={pw2} onChange={setPw2} />
                         <button data-testid="reset-submit" disabled={busy} className="btn-primary w-full justify-center">{busy ? "Updating…" : "Update password"}</button>
                     </form>
                 )}
