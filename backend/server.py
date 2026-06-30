@@ -600,6 +600,20 @@ async def on_startup():
     await db.password_resets.create_index("user_id")
     for col in ["services", "portfolio", "testimonials", "faq", "team"]:
         await db[col].create_index("id", unique=True)
+    # --- Admin recovery via env var ---
+    # If ADMIN_EMAIL is set, ensure that user is promoted to admin role on every boot.
+    # Lets the owner regain admin access on production by setting one env var + redeploying.
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    if admin_email:
+        existing = await db.users.find_one({"email": admin_email})
+        if existing:
+            if existing.get("role") != "admin":
+                await db.users.update_one({"email": admin_email}, {"$set": {"role": "admin"}})
+                logger.info(f"Promoted existing user {admin_email} to admin via ADMIN_EMAIL env")
+            else:
+                logger.info(f"ADMIN_EMAIL user {admin_email} already has admin role")
+        else:
+            logger.info(f"ADMIN_EMAIL {admin_email} not found in users; will be created when user first registers or uses /admin/setup")
     logger.info("Veda Brands API ready")
 
 @app.on_event("shutdown")
