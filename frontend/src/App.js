@@ -15,6 +15,8 @@ import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminSetup from "@/pages/admin/AdminSetup";
+import ForgotPassword from "@/pages/admin/ForgotPassword";
+import ResetPassword from "@/pages/admin/ResetPassword";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
 import HomepageEditor from "@/pages/admin/HomepageEditor";
@@ -56,6 +58,8 @@ export default function App() {
                     </Route>
                     <Route path="/admin/setup" element={<AdminSetup />} />
                     <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route path="/admin/forgot" element={<ForgotPassword />} />
+                    <Route path="/admin/reset" element={<ResetPassword />} />
                     <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
                         <Route index element={<Overview />} />
                         <Route path="homepage" element={<HomepageEditor />} />

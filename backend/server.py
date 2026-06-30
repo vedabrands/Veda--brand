@@ -156,6 +156,13 @@ class StatusUpdate(BaseModel):
     status: str
     notes: Optional[str] = ""
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str
+
 class GenericDoc(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -212,6 +219,64 @@ async def logout(response: Response):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     return user
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, request: Request):
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    # Always succeed (don't leak whether the email exists)
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        await db.password_resets.insert_one({
+            "token": token, "user_id": user["id"], "email": email,
+            "expires_at": expires_at, "used": False, "created_at": now_iso(),
+        })
+        origin = request.headers.get("origin") or request.headers.get("referer", "").rstrip("/") or ""
+        # Strip trailing path from referer if needed
+        if origin and "://" in origin:
+            origin = "/".join(origin.split("/", 3)[:3])
+        reset_url = f"{origin}/admin/reset?token={token}" if origin else f"/admin/reset?token={token}"
+        is_admin = user.get("role") == "admin"
+        portal = "admin console" if is_admin else "account"
+        html = email_shell(f"""
+            <h2 style="margin:0 0 12px;color:#fff;font-weight:600">Reset your password</h2>
+            <p>Hi {user.get('name','there').split(' ')[0]}, we received a request to reset the password for your Veda Brands {portal}.</p>
+            <p style="margin:24px 0">
+              <a href="{reset_url}" style="display:inline-block;padding:14px 28px;background:#ffffff;color:#09090B;border-radius:9999px;font-weight:600;text-decoration:none">Reset password →</a>
+            </p>
+            <p style="font-size:13px;color:#A1A1AA">Or paste this link into your browser:<br/><span style="color:#22D3EE;word-break:break-all">{reset_url}</span></p>
+            <p style="font-size:13px;color:#A1A1AA">This link expires in 1 hour. If you didn't request this, you can ignore this email — your password won't change.</p>
+        """)
+        asyncio.create_task(send_email_async(email, "Reset your Veda Brands password", html))
+    return {"ok": True}
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn):
+    if len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    rec = await db.password_resets.find_one({"token": body.token})
+    if not rec or rec.get("used"):
+        raise HTTPException(400, "Invalid or expired reset link")
+    try:
+        exp = datetime.fromisoformat(rec["expires_at"])
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            raise HTTPException(400, "Reset link has expired. Please request a new one.")
+    except (ValueError, KeyError):
+        raise HTTPException(400, "Invalid reset link")
+    user = await db.users.find_one({"id": rec["user_id"]})
+    if not user:
+        raise HTTPException(400, "User not found")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.password)}})
+    await db.password_resets.update_one({"token": body.token}, {"$set": {"used": True, "used_at": now_iso()}})
+    # Invalidate other unused tokens for this user
+    await db.password_resets.update_many(
+        {"user_id": user["id"], "used": False, "token": {"$ne": body.token}},
+        {"$set": {"used": True, "used_at": now_iso()}},
+    )
+    return {"ok": True}
 
 # ---------------- Public Content (read) ----------------
 async def find_one_doc(collection: str, default: dict) -> dict:
@@ -531,6 +596,8 @@ app.add_middleware(
 async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
+    await db.password_resets.create_index("token", unique=True)
+    await db.password_resets.create_index("user_id")
     for col in ["services", "portfolio", "testimonials", "faq", "team"]:
         await db[col].create_index("id", unique=True)
     logger.info("Veda Brands API ready")

@@ -48,6 +48,9 @@ export default function AdminLogin() {
                         <input data-testid="admin-email" type="email" placeholder="Email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
                         <input data-testid="admin-password" type="password" placeholder="Password" required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 focus:border-veda-cyan/50" />
                         <button data-testid="admin-submit" disabled={busy} className="btn-primary w-full justify-center">{busy ? "Authenticating…" : "Login"}</button>
+                        <div className="text-center pt-1">
+                            <Link to="/admin/forgot" data-testid="admin-forgot-link" className="text-xs text-white/50 hover:text-veda-cyan">Forgot password?</Link>
+                        </div>
                     </form>
                 )}
             </div>
