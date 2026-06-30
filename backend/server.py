@@ -1,89 +1,533 @@
-from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+import os
+import asyncio
+import logging
+import uuid
+import secrets
+import bcrypt
+import jwt
+import resend
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Any
+from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, status
+from fastapi.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-# Create the main app without a prefix
-app = FastAPI()
+# ---------------- Config ----------------
+MONGO_URL = os.environ['MONGO_URL']
+DB_NAME = os.environ['DB_NAME']
+JWT_SECRET = os.environ['JWT_SECRET']
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
+ADMIN_NOTIFY_EMAIL = os.environ.get('ADMIN_NOTIFY_EMAIL', 'vedabrandssupport@gmail.com')
+JWT_ALGORITHM = "HS256"
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+resend.api_key = RESEND_API_KEY
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s')
+logger = logging.getLogger("veda")
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+client = AsyncIOMotorClient(MONGO_URL)
+db = client[DB_NAME]
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+app = FastAPI(title="Veda Brands API")
+api = APIRouter(prefix="/api")
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
+# ---------------- Helpers ----------------
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode(), hashed.encode())
+    except Exception:
+        return False
+
+def create_access_token(user_id: str, email: str, role: str) -> str:
+    payload = {"sub": user_id, "email": email, "role": role,
+               "exp": datetime.now(timezone.utc) + timedelta(hours=12), "type": "access"}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def create_refresh_token(user_id: str) -> str:
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "refresh"}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def set_auth_cookies(response: Response, access: str, refresh: str):
+    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
+
+async def get_current_user(request: Request) -> dict:
+    token = request.cookies.get("access_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(401, "Invalid token type")
+        user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+        if not user:
+            raise HTTPException(401, "User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, "Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid token")
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin access required")
+    return user
+
+async def send_email_async(to: str, subject: str, html: str):
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY missing; skipping email")
+        return
+    try:
+        params = {"from": f"Veda Brands <{SENDER_EMAIL}>", "to": [to], "subject": subject, "html": html}
+        await asyncio.to_thread(resend.Emails.send, params)
+    except Exception as e:
+        logger.error(f"Email send failed: {e}")
+
+def email_shell(content_html: str) -> str:
+    return f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#09090B;font-family:'Helvetica Neue',Arial,sans-serif;color:#ffffff">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#09090B;padding:40px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:24px;overflow:hidden">
+      <tr><td style="padding:40px 40px 24px;text-align:center;background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(34,211,238,0.15))">
+        <div style="font-size:28px;font-weight:700;letter-spacing:0.15em;color:#ffffff">VEDA BRANDS</div>
+        <div style="font-size:11px;letter-spacing:0.3em;color:#22D3EE;margin-top:6px">BRANDING · STRATEGY · GROWTH</div>
+      </td></tr>
+      <tr><td style="padding:32px 40px;color:#E4E4E7;font-size:15px;line-height:1.7">{content_html}</td></tr>
+      <tr><td style="padding:24px 40px 32px;border-top:1px solid rgba(255,255,255,0.08);color:#A1A1AA;font-size:13px">
+        <div><strong style="color:#fff">Veda Brands</strong></div>
+        <div>Faridabad, Haryana, India · 7:00 AM – 8:00 PM (Daily)</div>
+        <div style="margin-top:6px">Phone / WhatsApp: +91 8368124957</div>
+        <div>Email: vedabrandssupport@gmail.com</div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table></body></html>"""
+
+# ---------------- Models ----------------
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+class SetupAdminIn(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+
+class LeadIn(BaseModel):
+    first_name: str
+    email: EmailStr
+    consent: bool = True
+    source: Optional[str] = "popup"
+
+class InquiryIn(BaseModel):
+    name: str
+    email: EmailStr
+    phone: Optional[str] = ""
+    service: Optional[str] = ""
+    message: str
+    consent: bool = True
+    source: Optional[str] = "contact"
+
+class StatusUpdate(BaseModel):
+    status: str
+    notes: Optional[str] = ""
+
+class GenericDoc(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+# ---------------- Auth Endpoints ----------------
+@api.get("/setup/status")
+async def setup_status():
+    exists = await db.users.find_one({"role": "admin"})
+    return {"admin_exists": bool(exists)}
+
+@api.post("/setup/admin")
+async def setup_admin(body: SetupAdminIn, response: Response):
+    if await db.users.find_one({"role": "admin"}):
+        raise HTTPException(400, "Admin already exists")
+    uid = str(uuid.uuid4())
+    doc = {"id": uid, "email": body.email.lower(), "name": body.name,
+           "password_hash": hash_password(body.password), "role": "admin", "created_at": now_iso()}
+    await db.users.insert_one(doc)
+    access = create_access_token(uid, body.email.lower(), "admin")
+    refresh = create_refresh_token(uid)
+    set_auth_cookies(response, access, refresh)
+    return {"id": uid, "email": body.email.lower(), "name": body.name, "role": "admin"}
+
+@api.post("/auth/register")
+async def register(body: RegisterIn, response: Response):
+    email = body.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(400, "Email already registered")
+    uid = str(uuid.uuid4())
+    doc = {"id": uid, "email": email, "name": body.name,
+           "password_hash": hash_password(body.password), "role": "customer", "created_at": now_iso()}
+    await db.users.insert_one(doc)
+    access = create_access_token(uid, email, "customer")
+    refresh = create_refresh_token(uid)
+    set_auth_cookies(response, access, refresh)
+    return {"id": uid, "email": email, "name": body.name, "role": "customer"}
+
+@api.post("/auth/login")
+async def login(body: LoginIn, response: Response):
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    access = create_access_token(user["id"], email, user["role"])
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    return {"id": user["id"], "email": email, "name": user["name"], "role": user["role"]}
+
+@api.post("/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    return {"ok": True}
+
+@api.get("/auth/me")
+async def me(user: dict = Depends(get_current_user)):
+    return user
+
+# ---------------- Public Content (read) ----------------
+async def find_one_doc(collection: str, default: dict) -> dict:
+    doc = await db[collection].find_one({"id": "singleton"}, {"_id": 0})
+    return doc or default
+
+async def upsert_doc(collection: str, data: dict) -> dict:
+    data["id"] = "singleton"
+    data["updated_at"] = now_iso()
+    await db[collection].update_one({"id": "singleton"}, {"$set": data}, upsert=True)
+    out = await db[collection].find_one({"id": "singleton"}, {"_id": 0})
+    return out
+
+DEFAULT_HOMEPAGE = {
+    "id": "singleton",
+    "hero_eyebrow": "Premium Branding & Marketing Agency",
+    "hero_title": "We build brands that people remember.",
+    "hero_subtitle": "Veda Brands crafts strategy, design and digital experiences for ambitious businesses ready to lead their category.",
+    "hero_cta_primary": "Start Your Project",
+    "hero_cta_secondary": "View Portfolio",
+    "stats": [
+        {"label": "Brands Built", "value": "120+"},
+        {"label": "Projects Delivered", "value": "240+"},
+        {"label": "Happy Clients", "value": "98%"},
+        {"label": "Years Experience", "value": "8+"},
+    ],
+    "why_points": [
+        {"title": "Strategy First", "description": "Every brand begins with insight, positioning and a clear point of view."},
+        {"title": "Design That Sells", "description": "Beautiful is not enough. Our work converts attention into trust into revenue."},
+        {"title": "Always-On Growth", "description": "From launch to scale, we partner long-term to compound your brand equity."},
+        {"title": "Transparent Process", "description": "Clear timelines, weekly updates, no surprises. Premium without the mystery."},
+    ],
+    "process": [
+        {"step": "01", "title": "Discovery", "description": "We immerse ourselves in your market, audience and ambition."},
+        {"step": "02", "title": "Strategy", "description": "Positioning, messaging and a roadmap aligned to business goals."},
+        {"step": "03", "title": "Design", "description": "Identity, web and assets engineered to feel inevitable."},
+        {"step": "04", "title": "Execution", "description": "Launch campaigns, content engines and product surfaces."},
+        {"step": "05", "title": "Growth", "description": "Measure, refine and compound — month after month."},
+    ],
+}
+
+DEFAULT_ABOUT = {
+    "id": "singleton",
+    "title": "We build brands the world wants to believe in.",
+    "subtitle": "An independent studio of strategists, designers and marketers based in Faridabad, working with founders across the world.",
+    "story": "Veda Brands was founded on a simple belief: every business deserves a brand as ambitious as its founder. We exist to translate vision into identity, identity into experience, and experience into growth.",
+    "mission": "To craft brands that move culture forward — beautifully, strategically, profitably.",
+    "vision": "A world where every founder has access to agency-grade craft, without the agency-grade friction.",
+    "values": [
+        {"title": "Craft", "description": "We obsess over typography, motion, copy, code — the details that compound."},
+        {"title": "Candor", "description": "We tell clients the truth, especially when it is inconvenient."},
+        {"title": "Partnership", "description": "We do our best work when we feel part of your team."},
+        {"title": "Outcomes", "description": "Beautiful work that does not move the business is decoration. We ship results."},
+    ],
+}
+
+DEFAULT_CONTACT = {
+    "id": "singleton",
+    "phone": "+91 8368124957",
+    "whatsapp": "+91 8368124957",
+    "whatsapp_link": "https://wa.me/918368124957",
+    "email": "vedabrandssupport@gmail.com",
+    "instagram": "Coming Soon",
+    "instagram_url": "",
+    "linkedin": "Coming Soon",
+    "linkedin_url": "",
+    "address": "Faridabad, Haryana, India",
+    "hours": "7:00 AM – 8:00 PM · Every day",
+    "map_embed": "https://www.google.com/maps?q=Faridabad,Haryana,India&output=embed",
+}
+
+DEFAULT_SETTINGS = {
+    "id": "singleton",
+    "site_name": "Veda Brands",
+    "tagline": "Branding · Strategy · Growth",
+    "logo_url": "https://customer-assets.emergentagent.com/job_plan-to-web-3/artifacts/qbcwotqv_file_000000004c4c71faacfe1a270ae532d7.png",
+    "favicon_url": "",
+    "meta_title": "Veda Brands — Premium Branding & Marketing Agency",
+    "meta_description": "Veda Brands helps ambitious businesses build unforgettable brands through strategy, design, marketing and digital experiences.",
+    "social": {"instagram": "", "linkedin": "", "twitter": ""},
+}
+
+@api.get("/cms/homepage")
+async def get_homepage():
+    return await find_one_doc("homepage_content", DEFAULT_HOMEPAGE)
+
+@api.get("/cms/about")
+async def get_about():
+    return await find_one_doc("about_content", DEFAULT_ABOUT)
+
+@api.get("/cms/contact")
+async def get_contact():
+    return await find_one_doc("contact_settings", DEFAULT_CONTACT)
+
+@api.get("/cms/settings")
+async def get_settings():
+    return await find_one_doc("website_settings", DEFAULT_SETTINGS)
+
+# Collections (services, portfolio, testimonials, faq, team)
+async def list_items(collection: str, only_published: bool = False) -> List[dict]:
+    q = {"published": True} if only_published else {}
+    items = await db[collection].find(q, {"_id": 0}).sort("order", 1).to_list(500)
+    return items
+
+@api.get("/cms/services")
+async def list_services_public():
+    return await list_items("services", only_published=True)
+
+@api.get("/cms/services/{slug}")
+async def get_service(slug: str):
+    item = await db.services.find_one({"slug": slug, "published": True}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Service not found")
+    return item
+
+@api.get("/cms/portfolio")
+async def list_portfolio_public():
+    return await list_items("portfolio", only_published=True)
+
+@api.get("/cms/portfolio/{slug}")
+async def get_portfolio(slug: str):
+    item = await db.portfolio.find_one({"slug": slug, "published": True}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Project not found")
+    return item
+
+@api.get("/cms/testimonials")
+async def list_testimonials_public():
+    return await list_items("testimonials", only_published=True)
+
+@api.get("/cms/faq")
+async def list_faq_public():
+    return await list_items("faq", only_published=True)
+
+@api.get("/cms/team")
+async def list_team_public():
+    return await list_items("team", only_published=True)
+
+# ---------------- Inquiries & Leads ----------------
+@api.post("/inquiries")
+async def create_inquiry(body: InquiryIn):
+    doc = body.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["status"] = "new"
+    doc["notes"] = ""
+    doc["created_at"] = now_iso()
+    await db.inquiries.insert_one(doc)
+    contact = await find_one_doc("contact_settings", DEFAULT_CONTACT)
+    # Customer confirmation
+    cust_html = email_shell(f"""
+        <h2 style="margin:0 0 12px;color:#fff;font-weight:600">Thank you, {body.name.split(' ')[0]}.</h2>
+        <p>We received your inquiry and our team will respond within one business day.</p>
+        <div style="margin:20px 0;padding:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px">
+          <div><strong style="color:#22D3EE">Service:</strong> {body.service or 'General Inquiry'}</div>
+          <div style="margin-top:8px"><strong style="color:#22D3EE">Message:</strong> {body.message}</div>
+        </div>
+        <p>Prefer to chat now? WhatsApp us at <a href="{contact.get('whatsapp_link','')}" style="color:#22D3EE">+91 8368124957</a>.</p>
+    """)
+    asyncio.create_task(send_email_async(body.email, "We've received your inquiry — Veda Brands", cust_html))
+    # Admin notify
+    admin_html = email_shell(f"""
+        <h2 style="margin:0 0 12px;color:#fff;font-weight:600">New Inquiry</h2>
+        <p><strong>Name:</strong> {body.name}<br/>
+        <strong>Email:</strong> {body.email}<br/>
+        <strong>Phone:</strong> {body.phone or '-'}<br/>
+        <strong>Service:</strong> {body.service or '-'}</p>
+        <div style="margin:16px 0;padding:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px">{body.message}</div>
+    """)
+    asyncio.create_task(send_email_async(ADMIN_NOTIFY_EMAIL, f"New Inquiry · {body.name}", admin_html))
+    return {"ok": True, "id": doc["id"]}
+
+@api.post("/leads")
+async def create_lead(body: LeadIn):
+    doc = body.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["status"] = "new"
+    doc["created_at"] = now_iso()
+    await db.leads.insert_one(doc)
+    welcome = email_shell(f"""
+        <h2 style="margin:0 0 12px;color:#fff;font-weight:600">Welcome to Veda Brands, {body.first_name}. 🚀</h2>
+        <p>Thank you for connecting with us. We're excited to be part of your branding journey.</p>
+        <p>Our mission is to help businesses build memorable brands through strategy, creativity, design and marketing.</p>
+        <p>We'll occasionally share branding insights, useful resources and important updates.</p>
+        <p style="margin-top:24px">If you're ready to discuss a project, we'd love to hear from you.</p>
+        <p style="margin-top:24px;color:#A1A1AA">— Team Veda Brands</p>
+    """)
+    asyncio.create_task(send_email_async(body.email, "Welcome to Veda Brands 🚀", welcome))
+    admin_html = email_shell(f"<h2>New Lead</h2><p><strong>{body.first_name}</strong> · {body.email}<br/>Source: {body.source}</p>")
+    asyncio.create_task(send_email_async(ADMIN_NOTIFY_EMAIL, f"New Lead · {body.first_name}", admin_html))
+    return {"ok": True}
+
+# ---------------- Admin Endpoints (protected) ----------------
+def _crud_router(collection: str, item_name: str):
+    r = APIRouter()
+
+    @r.get("")
+    async def list_all(_: dict = Depends(require_admin)):
+        return await db[collection].find({}, {"_id": 0}).sort("order", 1).to_list(1000)
+
+    @r.post("")
+    async def create_item(body: dict, _: dict = Depends(require_admin)):
+        body["id"] = str(uuid.uuid4())
+        body.setdefault("published", True)
+        body.setdefault("order", 0)
+        body["created_at"] = now_iso()
+        body["updated_at"] = now_iso()
+        await db[collection].insert_one(body)
+        body.pop("_id", None)
+        return body
+
+    @r.put("/{item_id}")
+    async def update_item(item_id: str, body: dict, _: dict = Depends(require_admin)):
+        body.pop("id", None)
+        body.pop("_id", None)
+        body["updated_at"] = now_iso()
+        res = await db[collection].update_one({"id": item_id}, {"$set": body})
+        if res.matched_count == 0:
+            raise HTTPException(404, f"{item_name} not found")
+        out = await db[collection].find_one({"id": item_id}, {"_id": 0})
+        return out
+
+    @r.delete("/{item_id}")
+    async def delete_item(item_id: str, _: dict = Depends(require_admin)):
+        await db[collection].delete_one({"id": item_id})
+        return {"ok": True}
+
+    return r
+
+api.include_router(_crud_router("services", "Service"), prefix="/admin/services")
+api.include_router(_crud_router("portfolio", "Project"), prefix="/admin/portfolio")
+api.include_router(_crud_router("testimonials", "Testimonial"), prefix="/admin/testimonials")
+api.include_router(_crud_router("faq", "FAQ"), prefix="/admin/faq")
+api.include_router(_crud_router("team", "Team Member"), prefix="/admin/team")
+
+@api.put("/admin/homepage")
+async def update_homepage(body: dict, _: dict = Depends(require_admin)):
+    body.pop("_id", None)
+    return await upsert_doc("homepage_content", body)
+
+@api.put("/admin/about")
+async def update_about(body: dict, _: dict = Depends(require_admin)):
+    body.pop("_id", None)
+    return await upsert_doc("about_content", body)
+
+@api.put("/admin/contact")
+async def update_contact(body: dict, _: dict = Depends(require_admin)):
+    body.pop("_id", None)
+    return await upsert_doc("contact_settings", body)
+
+@api.put("/admin/settings")
+async def update_settings(body: dict, _: dict = Depends(require_admin)):
+    body.pop("_id", None)
+    return await upsert_doc("website_settings", body)
+
+@api.get("/admin/inquiries")
+async def list_inquiries(_: dict = Depends(require_admin)):
+    return await db.inquiries.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+@api.put("/admin/inquiries/{iid}")
+async def update_inquiry(iid: str, body: StatusUpdate, _: dict = Depends(require_admin)):
+    await db.inquiries.update_one({"id": iid}, {"$set": {"status": body.status, "notes": body.notes}})
+    return await db.inquiries.find_one({"id": iid}, {"_id": 0})
+
+@api.delete("/admin/inquiries/{iid}")
+async def delete_inquiry(iid: str, _: dict = Depends(require_admin)):
+    await db.inquiries.delete_one({"id": iid})
+    return {"ok": True}
+
+@api.get("/admin/leads")
+async def list_leads(_: dict = Depends(require_admin)):
+    return await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+@api.delete("/admin/leads/{lid}")
+async def delete_lead(lid: str, _: dict = Depends(require_admin)):
+    await db.leads.delete_one({"id": lid})
+    return {"ok": True}
+
+@api.get("/admin/overview")
+async def admin_overview(_: dict = Depends(require_admin)):
+    today = datetime.now(timezone.utc).date().isoformat()
+    inquiries_total = await db.inquiries.count_documents({})
+    inquiries_new = await db.inquiries.count_documents({"status": "new"})
+    leads_total = await db.leads.count_documents({})
+    leads_today = await db.leads.count_documents({"created_at": {"$gte": today}})
+    services = await db.services.count_documents({})
+    portfolio = await db.portfolio.count_documents({})
+    return {
+        "inquiries_total": inquiries_total,
+        "inquiries_new": inquiries_new,
+        "leads_total": leads_total,
+        "leads_today": leads_today,
+        "services": services,
+        "portfolio": portfolio,
+    }
+
+# ---------------- App wiring ----------------
+@api.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"name": "Veda Brands API", "status": "ok"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
-
-# Include the router in the main app
-app.include_router(api_router)
+app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+@app.on_event("startup")
+async def on_startup():
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("id", unique=True)
+    for col in ["services", "portfolio", "testimonials", "faq", "team"]:
+        await db[col].create_index("id", unique=True)
+    logger.info("Veda Brands API ready")
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def on_shutdown():
     client.close()
