@@ -1,0 +1,21 @@
+{
+  "summary": "Bug-fix verification PASSED. Both reported bugs are fixed: (1) /api/cms/homepage now returns the DEFAULT hero_title 'We build brands that people remember.' with all expected DEFAULT_HOMEPAGE fields (eyebrow, subtitle, CTAs, 4 stats, 4 why_points, 5 process steps); (2) /api/setup/status returns admin_exists:false, so the setup screen is reactivated. End-to-end setup -> login -> me -> admin/overview flow verified successfully with fresh creds owner@vedabrands.com / OwnerPass123!.",
+  "tested_scope": ["backend", "auth", "integration"],
+  "passed": [
+    "GET /api/cms/homepage 200 - hero_title='We build brands that people remember.' (no test pollution)",
+    "GET /api/cms/homepage - hero_eyebrow, hero_subtitle, hero_cta_primary='Start Your Project', hero_cta_secondary='View Portfolio' all match DEFAULT_HOMEPAGE",
+    "GET /api/cms/homepage - stats(4), why_points(4), process(5) arrays present",
+    "GET /api/setup/status 200 -> {admin_exists:false} before setup",
+    "POST /api/setup/admin 200 with owner@vedabrands.com / OwnerPass123! - returns id, email, name, role=admin; httpOnly access_token + refresh_token cookies set (Secure, HttpOnly)",
+    "GET /api/setup/status 200 -> {admin_exists:true} after setup (setup screen correctly disabled)",
+    "POST /api/auth/login 200 with same fresh creds - returns user object with role=admin; cookies set",
+    "GET /api/auth/me 200 - returns admin user (id, email, name, role=admin, created_at)",
+    "GET /api/admin/overview 200 - returns counts {inquiries_total:1, inquiries_new:1, leads_total:2, leads_today:1, services:0, portfolio:0} (NOT 401)"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (not requested)"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "test_credentials_updated": "owner@vedabrands.com / OwnerPass123! recorded in /app/memory/test_credentials.md (replaces the prior test-admin@vedabrands.com entry)"
+}
